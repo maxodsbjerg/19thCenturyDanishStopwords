@@ -272,7 +272,8 @@ stopwords <- LIGHT_articles_counts %>%
   slice_max(tf, n = 200) %>% 
   ungroup() %>% 
   count(word, sort = TRUE) %>% 
-  filter(n > 2)
+  filter(n > 2) %>% 
+  select(word)
 ```
 
 
