@@ -1,0 +1,284 @@
+---
+title: "Creating a 19th century stop-word list"
+author: "Max Odsbjerg Pedersen"
+date: "8/11/2021"
+output: html_document
+bibliography: references.bib
+---
+
+The document holds the documentation of the data processing that eventually ends op in the creating of a 19th century Danish stop-word list. This document is an effort to create a stop-word list, where it's genesis and decisions along the creation are transparent, thus highlighting the stop-word list's strength as well as it limitations. The data that we are going to use in this project will be newspaper data from the Danish Newspaper collection at The Royal Danish Library.
+
+The data processing is done in the statistical programming language R and this documentation assumes some basic R-knowledge if you want to follow the coding. The documentation can however be read for the results and considerations of these results. This documentation is the light version of a similar data processing on a much larger dataset. The intention behind creating this light version is to give readers to recreate each coding step on their own computers.
+
+This documentation is based on the r-packages tidyverse and tidytext and the project have benefited greatly from the following two books, which is recommended for any one beginning a data project:
+
+[R for Data Science](https://r4ds.had.co.nz)
+
+[Text Mining with R](https://www.tidytextmining.com)
+
+# Loading libraries
+
+The dataset is processed in the software programme R, offering various methods for statistical analysis and graphic representation of the results. In R, one works with packages each adding numerous functionalities to the core functions of R. In this example, the relevant packages are:
+
+Documentation for each package:
+
+<https://www.tidyverse.org/packages/>
+
+<https://lubridate.tidyverse.org/>
+
+<https://cran.r-project.org/web/packages/tidytext/vignettes/tidytext.html>
+
+<https://github.com/karthik/wesanderson>
+
+Additional information about R: <https://www.r-project.org/>
+
+```{r, message=FALSE}
+library(tidyverse)
+library(lubridate)
+library(tidytext)
+library(wesanderson)
+```
+
+# The Danish Newspaper Collection
+
+As mentioned in the introduction the data used for creating the stop-word list will data from the Danish Newspaper collection. The collection consists of newspapers dating as far back as 1666. The psychical editions of the newspapers have been collected through times and eventually ended up in the newspaper collection. In other words alot of paper in one place, which have the disadvantage of consuming a lot of space - and demanding that the space have the right environment for the paper not to decompose.
+
+A solution to this problem was the photographing of the newspaper pages and storing the pictures on microfilm. These pictures were later digitised and the new digital copy was enriched with metadata on date, newspaper name, publishing place, etc. The digitisation also created the opportunity to further enrich the digital newspapers and one of the enhancements was the segmentation of the newspapers. This process had a computer program identify articles on the newspapers pages. The other enhancement was of course the Optical Character Recognition (OCR). Both the segmentation and the OCR-process will have direct influence on the shape of the data we will be working with here.
+
+[![Visualisation of the segmentation of a newspaper page. Work by Toke Eskildsen](Sk%C3%A6rmbillede%202021-12-05%20kl.%2015.23.23.png "Visualisation of the segmentation of a newspaper page"){width="400"}](https://tokee.github.io/quack/demo/ACE-17950616-0018B.html)
+
+## Mediestream and the API
+
+The digitisation of the newspaper made it possible to create a freetext searchable database. This database is called Mediestream and makes it very easy to find and see newspaper articles where your free text search was matched in the OCR-text.
+
+The growing number of practitioners within the digital humanities however created a demand for accessing the data directly in order to perform text mining on newspaper articles for example. This lead to the creation of the experimental Mediestream-API(Application Programming Interface) , which is taking Mediestream queries and returning the data not in a visual search interface, but as raw data. For many the concept of an API can be hard to grasp, but in this case it is best understood as a hatch on the internet to which you can go and ask for data. You can decide what format(comma separated values(CSV) etc.) you want the data in, which fields you want and so on.
+
+> *You: Can I have all the articles from 1845?*
+>
+> *Mediestream-API: Sure. What format do you want it in? CSV or JSON?*
+>
+> *You: CSV. Please.*
+>
+> *Mediestream-API: <http://labs.statsbiblioteket.dk/labsapi/api/aviser/export/fields?query=iso_date%3A%5B1845-01-01%20TO%201845-01-31%5D&fields=link&fields=recordID&fields=timestamp&fields=pwa&fields=cer&fields=fulltext_org&fields=pageUUID&fields=editionUUID&fields=titleUUID&fields=editionId&fields=familyId&fields=newspaper_page&fields=newspaper_edition&fields=lplace&fields=location_name&fields=location_coordinates&max=10000&structure=header&structure=content&format=CSV>*
+
+Technical documentation and explanations on which fields are exported can be found on the [Swagger UI](http://labs.statsbiblioteket.dk/labsapi/api//api-docs?url=/labsapi/api/openapi.yaml). This user interface will also guide you in order to get an URL with your data. Due to copyright it is only possible to get data from before 1881.
+
+# Loading the data from the Royal Danish Library's API
+
+As mentioned in the introduction this documentation will be the light version in order to make it possible for readers to follow along in their own R. Thus in this example we will use just data from January from the four years, 1835, 1845, 1855 and 1865:
+
+```{r, message=FALSE, echo=FALSE}
+light_1835 <- read_csv("http://labs.statsbiblioteket.dk/labsapi/api/aviser/export/fields?query=iso_date%3A%5B1835-01-01%20TO%201835-01-31%5D&fields=link&fields=recordID&fields=timestamp&fields=pwa&fields=cer&fields=fulltext_org&fields=pageUUID&fields=editionUUID&fields=titleUUID&fields=editionId&fields=familyId&fields=newspaper_page&fields=newspaper_edition&fields=lplace&fields=location_name&fields=location_coordinates&max=10000&structure=header&structure=content&format=CSV")
+
+light_1845 <- read_csv("http://labs.statsbiblioteket.dk/labsapi/api/aviser/export/fields?query=iso_date%3A%5B1845-01-01%20TO%201845-01-31%5D&fields=link&fields=recordID&fields=timestamp&fields=pwa&fields=cer&fields=fulltext_org&fields=pageUUID&fields=editionUUID&fields=titleUUID&fields=editionId&fields=familyId&fields=newspaper_page&fields=newspaper_edition&fields=lplace&fields=location_name&fields=location_coordinates&max=10000&structure=header&structure=content&format=CSV")
+
+light_1855 <- read_csv("http://labs.statsbiblioteket.dk/labsapi/api/aviser/export/fields?query=iso_date%3A%5B1855-01-01%20TO%201855-01-31%5D&fields=link&fields=recordID&fields=timestamp&fields=pwa&fields=cer&fields=fulltext_org&fields=pageUUID&fields=editionUUID&fields=titleUUID&fields=editionId&fields=familyId&fields=newspaper_page&fields=newspaper_edition&fields=lplace&fields=location_name&fields=location_coordinates&max=20000&structure=header&structure=content&format=CSV")
+
+light_1865 <- read_csv("http://labs.statsbiblioteket.dk/labsapi/api/aviser/export/fields?query=iso_date%3A%5B1865-01-01%20TO%201865-01-31%5D&fields=link&fields=recordID&fields=timestamp&fields=pwa&fields=cer&fields=fulltext_org&fields=pageUUID&fields=editionUUID&fields=titleUUID&fields=editionId&fields=familyId&fields=newspaper_page&fields=newspaper_edition&fields=lplace&fields=location_name&fields=location_coordinates&max=30000&structure=header&structure=content&format=CSV")
+```
+
+This four years are selected in order to give the data a long timely dispersion while still keeping the size of the data at a minimum. The limit of 1865 is chosen based on the orthographical changes of 1872 with the publicising of Svend Grundtvigs *Dansk Haandordbog*. It is perhaps debatable how fast new orthographical changes appear in the newspapers, but in order avoid the risk of handling different orthographical changes in the stop word list, the decision to only have data before 1872 is made. For more information on the orthographical changes in the period see [@alma99122529060605763]\
+\
+Next step is to combine the four datasets into one.
+
+```{r}
+LIGHT_articles <- bind_rows(light_1835, light_1845, light_1855, light_1865)
+```
+
+The column "timestamp" returned from the API holds both year, month, day and even time of publishing. In this documentation we will be focused on how the years differes from each other. To make this easier we create a new column containing just the year:
+
+```{r}
+LIGHT_articles %>% 
+  mutate(year = year(timestamp)) -> LIGHT_articles
+```
+
+## Examining the data 
+
+Before venturing further on we are going to check out the representativity of our data on a number of factors. First off lets take a look at the timely dispersion of the data.
+
+### Dispersion of articles on years
+Is there an imbalance in the dispersions of the articles?
+
+```{r}
+LIGHT_articles %>% 
+  count(year, sort = TRUE) %>% 
+  mutate(pct_of_dataset = (n / sum(n)) * 100) %>% 
+  ggplot(aes(x = year, y = pct_of_dataset))+
+  geom_col() +
+  scale_x_continuous(name = "Year", limits=c(1830, 1870), breaks=c(1835,1845,1855,1865))+
+  labs(title = "Percentage of articles coming from each year", 
+       subtitle = "Total amount of articles in dataset: 62722",
+       y = "%")
+```
+
+So almost 50 % of the dataset consists of articles from 1865. The second place is taken by 1855 and the third place 1845 and in the end the fourth place for 1835. This of course have the implication that our stop-word list primary will be based on data from the middle of the century.
+
+### Dispersion of the data on publication place
+
+In this next section we are interested in seeing how the data disperses on publication place.
+
+```{r}
+LIGHT_articles %>% 
+  count(lplace, sort = TRUE) %>% 
+  mutate(pct = (n / sum(n))*100) %>% 
+  ggplot(aes(x = reorder(lplace, pct), y = pct)) +
+  geom_col(aes(fill = lplace), show.legend = FALSE) +
+  scale_fill_manual(values = wes_palette("Zissou1", 31, type = "continuous")) +
+  geom_label(aes(label = paste(round(pct, 1), "%", sep = " "),
+                 fill = lplace, y = -3),
+             show.legend = FALSE,
+             size = 2.3, 
+             label.padding = unit(0.1, "lines")) +
+  expand_limits(y = -3) +
+  coord_flip()
+```
+
+So Copenhagen is heavily overrepresented in the dataset - this however follows the general pattern of the time - compared with populations statistics - population = demand for newspapers. We also note that we have Charlotte Amalie and Christianssted as publication place - when working more directly with the textual data we need to filter these out, since these are a mixture of English and Danish and thus likely to mess up the proces of finding the Danish stopword list.
+
+This isn't however the only lingual perspective in the Danish newspaper data. A lot of the newspapers from the border region to Germany have a mixture of Danish and German. "the border region" in this period isn't even a fixed entity due to the war of 1864. The result of this war was the cession of a large part of the southern part of Jutland. Thus the data from before 1865 might be expected to contain more newspapers which is in German. This might pollute the data perhaps making german word appear on our stop-word list. However the hope is that the German newspapers will be so few compared to the Danish, that they will not cause any problems.
+
+### OCR quality in the data
+
+In the data we also have the column "pwa". This is the Predicted Word Accuracy for the OCR text on a scale from 0 to 100.
+
+The quality is expected to be low since since aclot of the newspapers text is printed in fraktur, while the OCR-engine is optimised for modern print. We here calculate the mean of the pwa on the entire dataset:
+
+```{r}
+LIGHT_articles %>% 
+  summarise(pwa_mean = mean(pwa))
+```
+
+But what is the pattern of the pwa for our dataset dispersed on year? Is it lower in the older parts of the data or is it the same through all the years of our data - lets see:
+
+```{r}
+LIGHT_articles%>% 
+  group_by(year) %>% 
+  summarise(pwa_mean = mean(pwa)) 
+```
+
+There isn't a clear pattern saying that the younger the newspaper the better it's pwa gets. This is due to 1855 having a higher pwa than 1865 by around one. Generally however it seems like there could be a pattern since 1835 and 1845 has a lower pwa than the to older. Nonetheless this is only speculations since we only have four years here. It could be interesting to examine the development of pwa over year with more datapoints, but this is out of the scope of this analysis. Here we restrict ourself with noting that since the scale of the pwa goes from one to hundred, our four datapoints lies pretty near each other. Thus is isn't any reason to assume a huge variety in the OCR-quality within the years in our data. 
+
+Overall we have som pretty bad OCR-quality. This is bound to give us some OCR-mistakes in the stop-word list. The list is going to be created out of the most frequent words within each year and then combined. Therefore the list will consist of both genuine stop words, but also OCR-misreadings of stop words. This is however okay since it is really rare that you have textual data from the 19th century that have been proofread and thus have no need for OCR-mistaken stop words as well as genuine stop words. 
+
+### Preliminary conclusion
+So far we have observed how more than 50 % of our dataset comes from the years 18855 and 1865, thus eventually skewing the stop-words list to more a mid 19th century stop-words list rather than a general 19th century stop-words list. This circumstance will be attempted checked later.  
+Another thing we noted was that the majority of our data was published in Copenhagen, which ofcourse has the effect that the stop-words list will be more specific towards Copenhagen, assuming that there are sigficant orthographical differences based on geography, which might not even be the case. This needs further examinations beyond the scope of this project. Here we restrict ourselves to noting the skewing of the data towards Copenhagen. 
+
+The last thing we discovered was that the OCR-quality was more less equally bad across the years. All the years average pwa(the OCR's self-assessed successrate 0-100) were around 50 % thus not showing any great internal deviation. The take away point is therefore the bad OCR-quality which will show on the final stop-word list, but that this might actually be a force of the stop-words list since material from the 19 th century most often will have a lot of OCR-mistakes. This makes a OCR-misread stop word just as insigficant than a correct read stop word
+
+# Creating the stop word list
+
+Before we start the process of creating the stop-word list we need to clean the data. As noted earlier we have the news papers from the former Danish West Indies which will contain a lot of English articles. The first cleaning step will be cleaning these newspapers out:
+
+```{r}
+LIGHT_articles %>% 
+  filter(!lplace %in% c("Christianssted", "Charlotte Amalie")) -> LIGHT_articles_clean
+```
+
+Next step is to exclude all the numbers from the fulltext_org column - we dont want any numbers to appear on our stopword list. 
+
+```{r}
+LIGHT_articles_clean %>% 
+  mutate(fulltext_org = str_remove_all(fulltext_org, "\\d+")) -> LIGHT_articles_clean
+```
+
+The data processing will be based on the Tidy Data Principle as it is implemented in the tidytext package. The notion is to take text and break it into individual words. In this way, there will be just one word per row in the dataset and thus making it possible for us to count words within each year. Right now the text is stored in one row corresponding to what the segmentation recognised as articles. In other words we want to explode the articles into single words.
+
+This is achieved by using the `unnest_tokens`-function:
+
+```{r}
+LIGHT_articles_clean %>% 
+  unnest_tokens(word, fulltext_org) -> LIGHT_articles_tidy
+```
+
+## Counting the frequencies per year
+
+Since we now have the text from the articles on the one word pr. row-format we can count the words to see, which words are used most frequently. Since we have prepared our year column we do the count within each year: 
+```{r}
+LIGHT_articles_tidy %>% 
+  count(year, word, sort = TRUE)
+```
+Not surprisingly, particles are the most common words we find. This is actually what we are after in this enquiry. We want to find the most frequent words within each year. How ever as we have seen data from 1865 and 1855 fills up more than 50 % of the dataset. The first step then becomes finding a measurement that will allow us to compare the frequency of words across the years. We can do this by calculating the word’s, or the term’s, frequency: 
+
+$$frequence=\frac{n_{term}}{N_{year}}$$
+Before we can take this step, we need R to count how many words there are in each year. This is done by using the function `group_by` followed by `summarise`:
+```{r}
+LIGHT_articles_tidy %>% 
+  count(year, word, sort = TRUE) %>% 
+  group_by(year) %>% 
+  summarise(total = sum(n)) -> total_words
+```
+
+Then we add the total number of words to our dataframe, which we do with `left_join`:
+
+```{r}
+LIGHT_articles_tidy %>%
+  count(year, word, sort = TRUE) %>% 
+  left_join(total_words, by = "year") -> LIGHT_articles_counts
+```
+
+We can now calculate the term frequency for each word: 
+```{r}
+LIGHT_articles_counts %>% 
+  mutate(tf = n / total) -> LIGHT_articles_counts
+```
+
+
+The next step is to take the 200 words with the highest tf-value from within each year:
+```{r}
+LIGHT_articles_counts %>%
+  group_by(year) %>% 
+  slice_max(tf, n = 200) %>% 
+  ungroup() %>% 
+  count(word, sort = TRUE)
+```
+We see alot of single letters here. And idea here could be to clean out single standing letters in the cleaning process. however here we use the build in letters vector in R to load them into at dataframe in order to filter them out: 
+
+```{r}
+letters_df <- tibble(word = letters)
+```
+
+
+```{r}
+LIGHT_articles_counts %>%
+  anti_join(letters_df, by = "word") %>% 
+  group_by(year) %>% 
+  slice_max(tf, n = 200) %>% 
+  ungroup() %>% 
+  count(word, sort = TRUE)
+```
+
+The n-column above shows the number of years a word appears. For our stop-word list we will accept words that appears in 3 of the years in our dataset or more. This way we ensure that the words appearing in the list is well represented in the dataset. This would ofcourse be more the case if we only accepted words appearing in all the four years, but here we decide on 3 in order to get a more broad stop-word list. 
+
+This is done in the next step: 
+
+```{r}
+LIGHT_articles_counts %>%
+  anti_join(letters_df, by = "word") %>% 
+  group_by(year) %>% 
+  slice_max(tf, n = 200) %>% 
+  ungroup() %>% 
+  count(word, sort = TRUE) %>% 
+  filter(n > 2)
+```
+
+The last step is to write out the list of words as a csv file:
+
+First we save it to a dataframe: 
+```{r}
+stopwords <- LIGHT_articles_counts %>%
+  anti_join(letters_df, by = "word") %>% 
+  group_by(year) %>% 
+  slice_max(tf, n = 200) %>% 
+  ungroup() %>% 
+  count(word, sort = TRUE) %>% 
+  filter(n > 2)
+```
+
+
+Lastly we write to comma seperated values- file:
+
+```{r}
+write_csv(stopwords, "19th_century_stopwords_DA_light.csv")
+```
+
